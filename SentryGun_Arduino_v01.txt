@@ -1,0 +1,189 @@
+/*
+Sorry, again the code is uncommented. Hope you can figure it out. Email me with any questions.
+Watch the video to see where the limit switches should be hooked up(LFTBTN, RITBTN, BTMBTN).
+Other than that, pretty simple stuff.
+
+
+*/
+
+#include <Servo.h>
+
+#define LFTBTN 2
+#define RITBTN 3
+#define BTMBTN 4
+
+int x = 0;
+Servo pan;
+Servo tilt;
+int targetx = 184;
+int targety = 160;
+int LFTBTNval = LOW;
+int RITBTNval = LOW;
+int BTMBTNval = LOW;
+char buff[]= "00000000000";
+int movex = 0;
+int movey = 0;
+int fire = 0;
+int id = 94;
+int g = 0;
+int lb = 0;
+int T = 0;
+int idletime = 5000000;
+
+
+void setup(){
+  pan.attach(5);
+  tilt.attach(6);
+  pinMode(13, OUTPUT);   // serial status LED
+  pinMode(7, OUTPUT);    // firing transistor
+  pinMode(LFTBTN, INPUT);
+  pinMode(RITBTN, INPUT);
+  pinMode(BTMBTN, INPUT);
+  Serial.begin(19200);
+}
+
+void loop() {   
+  if (Serial.available()>0) {
+    digitalWrite(13, HIGH);
+    for (int i=0; i<10; i++) {
+      buff[i]=buff[i+1];
+    }
+    buff[10]=Serial.read();
+    if (buff[10]=='X' && buff[6] == 'F') {
+      targetx = (100*(int(buff[7])-48)) + (10*(int(buff[8])-48)) + (int(buff[9])-48);
+    }
+    if (buff[10]=='Y' && buff[6] == 'X') {
+      targety = (100*(int(buff[7])-48)) + (10*(int(buff[8])-48)) + (int(buff[9])-48);
+    }
+    if (buff[10]=='F' && buff[8] == 'Y') {
+      fire = int(buff[9]) - 48;
+    }
+
+    if (targetx == 184 && targety == 160) {
+      LFTBTNval = digitalRead(LFTBTN);
+      RITBTNval = digitalRead(RITBTN);
+      BTMBTNval == digitalRead(BTMBTN);
+      T = T+10;
+
+      if(T >= idletime) {
+        
+        T = idletime+1;
+
+
+
+        if(LFTBTNval == HIGH) {
+          pan.write(88);
+          id = 88;
+          lb++;
+          delay(100);
+        }
+
+        if(RITBTNval == HIGH) {
+          pan.write(93);
+          id = 93;
+        }
+
+        if(BTMBTNval == HIGH) {
+          tilt.write(86);
+          delay(700);
+          tilt.write(90);
+        }
+
+        if(LFTBTNval == LOW && RITBTNval == LOW && BTMBTNval == LOW) {
+          pan.write(id);
+        }
+      }
+
+
+      delay(5);
+
+
+    }
+    else{
+      T = 0;
+    }
+
+    movex = ((184 - targetx) * (-1))/25;
+    movey = ((160 - targety) * (-1))/25;
+
+    if(movex > 3) {
+      movex = 2;
+    }
+    if(movex < -3) {
+      movex = -3;
+    }
+    if(movey > 1) {
+      movey = 1;
+    }
+    if(movey < -2) {
+      movey = -2;
+    }
+
+    pan.write(90 - (movex));
+    tilt.write(90 + (movey));
+
+    if (fire == 1) {
+      digitalWrite(7, HIGH);
+    }
+    else{
+      digitalWrite(7, LOW);
+    }
+
+    g = 0;
+
+  }
+  else{
+
+    pan.write(90 - (movex));
+    tilt.write(90 + (movey));
+
+    if (targetx == 184 && targety == 160) {
+      LFTBTNval = digitalRead(LFTBTN);
+      RITBTNval = digitalRead(RITBTN);
+      BTMBTNval == digitalRead(BTMBTN);
+      T = T + 10;
+
+      if(T >= idletime) {
+        
+        T = idletime+1;
+
+
+        if(LFTBTNval == HIGH) {
+          pan.write(88);
+          id = 88;
+        }
+
+        if(RITBTNval == HIGH) {
+          pan.write(93);
+          id = 93;
+        }
+
+        if(BTMBTNval == HIGH) {
+          tilt.write(86);
+          delay(700);
+          tilt.write(90);
+        }
+
+        if(LFTBTNval == LOW && RITBTNval == LOW && BTMBTNval == LOW) {
+          pan.write(id);
+        }
+      }
+      delay(5);
+
+
+
+    }
+    else{
+      T=0;
+    }
+
+    if (fire == 1) {
+      digitalWrite(7, HIGH);
+     }
+    else{
+      digitalWrite(7, LOW);
+      digitalWrite(11, LOW);
+    }
+
+  }
+}

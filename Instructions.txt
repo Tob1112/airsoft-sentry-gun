@@ -1,0 +1,65 @@
+I. How to get the software working on your computer:
+
+1) get a webcam, and install it's drivers onto your computer.
+
+2) download the Arduino IDE (http://arduino.cc/en/Main/Software) .
+
+3) download the Processing IDE (http://processing.org/download/) .
+
+4) download the folloring libraries: JMyron, blobDetection, and controlP5 (http://processing.org/reference/libraries/).
+
+5) download the most recent sentry gun code for Arduino and Processing (http://code.google.com/p/airsoft-sentry-gun/downloads/list).
+
+6) Connect your servo's to your Arduino, as explained below. 
+
+7) Open the Arduino IDE, and then within it, open the sentry gun code for the Arduino.
+
+8) Plug the Arduino into your computer.
+
+9) program the Arduino by clicking the 'compile' button, then the 'upload' button. If you get any errors, check that your board is selected by going to Tools > Board, and that the right COM port is selected by going to Tools > Serial Port.
+
+10) Now, open the Processing IDE, and within it, open the sentry gun code for Processing.
+
+11) Run the code by pressing 'Ctrl + r'  or clicking "Run".
+
+
+
+
+
+
+
+II. How to connect the servos: 
+
+1) Place the arduino board with the silver serial/USB port on the top. There should be a vertical row of black sockets down each side of the board. The ATMega chip should be vertical, on the lower left-hand side of the board. 
+
+2) The sockets down the right side of the board are the digital I/O pins. They are numbered 0 to 13. 
+
+3) On the left side are more sockets. You will only use the Gnd (ground) pin on this side. 
+
+
+4) Wire the ground (black wire) of your servo power source to the 'Gnd' pin on the Arduino board.
+
+5) For each of your servo's, wire the black/brown wire to the 'Gnd' pin on the Arduino board.
+
+6) For each of your servo's, wire the red wire to the power (red wire) of your servo power source.
+
+7) Wire each servo's yellow/white wire to it's own pin on the right side of the board, as designated at the beginning of the sentry gun code for Arduino.
+
+8) Connect other LED's and/or switches as preferred. This is outlined at the beginning of the sentry gun code for Arduino. These are optional.
+
+
+
+
+III. Troubleshooting:
+
+Don't know if the porblem is with the Arduino or the computer? Download and run the Targeting Demo. If it doesn't run, the problem is with the computer.
+
+Are all the libraries downloaded and working?
+
+Are your webcam drivers downloaded and working?
+
+Is your Arduino plugged in, and are the right Serial Port and Board selected?
+
+If you run the code and get this error: "ArrayIndexOutOfBoundsException: 0" then change this line in the code: arduinoPort = new Serial(this, Serial.list()[0], 9600); to arduinoPort = new Serial(this, Serial.list()[1], 9600); or arduinoPort = new Serial(this, Serial.list()[2], 9600); .
+
+Still doesn't work? email me at sentryGun53@gmail.com . 

@@ -1,0 +1,214 @@
+/*
+  
+ ------------ SENTRY GUN TURRET VERSION 4 CODE 13 -------------
+ --------------------- by  Tobias Scharfenberg ----------------
+ ==============================================================
+ 
+ This is the lastest code as of Sept 8, 2010.
+ This is the computer side of the code, and is compatible with version 4.13 of the Arduino code.
+ 
+ A stationary camera is used in this program.
+ 
+ SUMMARY:
+ press 'b' to set background image
+ press 's' for camera settings
+ hold 'r' and click+drag to form a rectangle "fire-restricted" zone
+ hold 't' to view "fire-restricted zones"
+ 
+ Produced by Bob Rudolph. Version 4 , Revision 13. Use this code and modify it freely.
+ Comments, bugs, questions? post a comment on code.google.com/p/airsoft-sentry-gun/wiki/General
+ 
+ */
+
+
+import JMyron.*;
+import blobDetection.*;
+import processing.serial.*;
+Serial arduinoPort;
+JMyron theMov;
+BlobDetection target;
+Blob blob;
+Blob biggestBlob;
+int[] screenPixels;
+int[] currFrame;
+int[] Background;
+int tolerance = 50;
+boolean revealing;
+float difference;
+int blobWidth;
+int blobHeight;
+int biggestBlobArea;
+int minBlobArea = 5; 
+int targetX;
+int targetY;
+
+int Targetx = 75;
+int Targety = 80;
+int fire = 0;
+float xMin = 69.0;                     //    0.0      used for calibration. For a permanent calibration (lasts after stopping
+float xMax = 104.0;                   //    180.0    the program) change these 4 floats to your calibrations.
+float yMin = 115.0;                   //    180.0
+float yMax = 61.0;                    //    40.0
+String strTargetx;                    // used for serial sending
+String strTargety;                    //
+String strFire;                       //
+float windowWidth = 320.0;
+float windowHeight = 240.0;
+float xRatio;
+float yRatio;
+int currX;
+int currY;
+
+int[][] fireRestrictedZones = new int[30][4];
+int restrictedZone = 0;
+
+void setup() {
+  size(int(windowWidth), int(windowHeight));
+  theMov = new JMyron();
+  theMov.start(int(windowWidth), int(windowHeight));
+  theMov.findGlobs(0);
+  theMov.adaptivity(1.5);
+  theMov.update();
+  Background = theMov.image();
+  target = new BlobDetection(int(windowWidth), int(windowHeight));
+  target.setThreshold(0.5);
+  target.setPosDiscrimination(true);
+  arduinoPort = new Serial(this, Serial.list()[0], 9600);      // start arduino communications
+  xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+  yRatio = (windowHeight/ (yMax - yMin));
+}
+
+void draw() {
+  processTargets(); 
+  strTargetx = "000" + str(Targetx);                   // make into 3-digit numbers
+  strTargetx = strTargetx.substring(strTargetx.length()-3);
+  strTargety = "000" + str(Targety);
+  strTargety = strTargety.substring(strTargety.length()-3);
+  arduinoPort.write('a' + strTargetx + strTargety + str(fire));   // send to arduino in form: a#######
+  revealing = true;
+
+  showRestrictedZones();
+}
+
+// function for processing targets
+//  
+void processTargets() {
+  theMov.update();
+  Background = theMov.retinaImage();
+  currFrame = theMov.image();
+  screenPixels = currFrame;
+  loadPixels();
+  for(int i = 0; i < int(windowWidth)*int(windowHeight); i++) {
+    pixels[i] = currFrame[i];
+    if(pixelsDifference(i) > tolerance) {
+      screenPixels[i] = color(255,255,255);
+      pixels[i] = color(0,255,255);
+    }
+    else{
+      screenPixels[i] = color(0,0,0);
+    }
+  }
+  updatePixels();
+
+  biggestBlobArea = 0;
+  target.computeBlobs(screenPixels);
+  for(int i = 0; i < target.getBlobNb()-1; i++) {
+    blob = target.getBlob(i);
+    blobWidth = int(blob.w*int(windowWidth));
+    blobHeight = int(blob.h*int(windowHeight));
+    if(blobWidth*blobHeight >= biggestBlobArea) {
+      biggestBlob = target.getBlob(i);
+      biggestBlobArea = int(biggestBlob.w*int(windowWidth))*int(biggestBlob.h*int(windowHeight));
+    }
+  }
+  currX = int(biggestBlob.x*windowWidth);
+  currY = int(biggestBlob.y*windowHeight); 
+  boolean clearOfZones = true;
+
+  for(int col = 0; col <= restrictedZone; col++) {
+    if(currX > fireRestrictedZones[col][0] && currX < fireRestrictedZones[col][1] && currY > fireRestrictedZones[col][2] && currY < fireRestrictedZones[col][3]) {
+      clearOfZones = false;
+    }
+  }
+
+  if(biggestBlobArea >= minBlobArea && clearOfZones) {
+    fire = 1;
+    stroke(255,50,50);
+    strokeWeight(3);
+    fill(255,50,50,150);
+    rect(int(biggestBlob.xMin*windowWidth), int(biggestBlob.yMin*windowHeight), int((biggestBlob.xMax-biggestBlob.xMin)*windowWidth), int((biggestBlob.yMax-biggestBlob.yMin)*windowHeight));
+
+    Targetx = int((currX/xRatio)+xMin);         
+    Targety = int(((windowHeight-currY)/yRatio)+yMin);
+    if(currY < int(windowHeight)) {
+      stroke(255,0,0);
+      strokeWeight(2);
+      noFill();
+      ellipse(currX, currY, 25,25);
+      ellipse(currX, currY, 30,30);
+    }
+  }
+  else{
+    fire = 0;
+  }
+}
+
+// function for differencing pixels
+int pixelsDifference(int index) {
+  return int(Math.abs(red(currFrame[index])-red(Background[index]))) + int(Math.abs(green(currFrame[index])-green(Background[index]))) + int(Math.abs(blue(currFrame[index])-blue(Background[index])));
+}
+
+void showRestrictedZones() {
+  if(keyPressed) {
+    if(key == 't') {
+      for(int col = 0; col <= restrictedZone; col++) {
+        noStroke();
+        fill(0,255,0,100);
+        rect(fireRestrictedZones[col][0], fireRestrictedZones[col][2], fireRestrictedZones[col][1]-fireRestrictedZones[col][0], fireRestrictedZones[col][3]-fireRestrictedZones[col][2]);
+      }
+    }
+  }
+}
+
+
+void mousePressed() {
+  if(keyPressed && key == 'r') {
+    print("constraints:" + mouseX + ", " + mouseY);
+    fireRestrictedZones[restrictedZone][0] = mouseX;
+    fireRestrictedZones[restrictedZone][2] = mouseY;
+  }
+}
+
+void mouseReleased() {
+  if(keyPressed && key == 'r') {
+    println(" ... " + mouseX + ", " + mouseY);
+    fireRestrictedZones[restrictedZone][1] = mouseX;
+    fireRestrictedZones[restrictedZone][3] = mouseY;
+    if(fireRestrictedZones[restrictedZone][1]>fireRestrictedZones[restrictedZone][0] && fireRestrictedZones[restrictedZone][1]>fireRestrictedZones[restrictedZone][2]) {
+      restrictedZone++;
+    }
+  }
+}
+
+void keyReleased() {
+  if (key == 'b'){
+    theMov.adapt();
+  }
+  if (key == 's'){
+    theMov.settings();
+  }
+}
+public void stop() {
+  arduinoPort.write("z0000000");
+  theMov.stop();
+  super.stop();
+}
+
+
+
+
+
+
+
+
+

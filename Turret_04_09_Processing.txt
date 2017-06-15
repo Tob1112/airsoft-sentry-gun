@@ -1,0 +1,474 @@
+/*
+
+ ------------ SENTRY GUN TURRET VERSION 4 CODE 09 -------------
+ ------------- Tobias Scharfenberg ----------------------------
+ ==============================================================
+ 
+ This is the lastest code as of April 29, 2010.
+ This is the computer side of the code, and is compatible with version 4.09 of the Arduino code.
+ 
+ ARDUINO ATTACHMENT INSTRUCTIONS:
+ attach x-axis standard servo to digital I/O pin 5
+ attach y-axis standard servo to digital I/O pin 6
+ attach firing transistor / relay to digital I/O pin 7 (or servo that pulls trigger... see directions regarding this in Arduino code)
+ 
+ A stationary camera is used in this program.
+ 
+ 
+ SUMMARY:
+ 
+ There are two modes: manual control, and autonomous. To toggle between them, click the MAN/AUTO button.
+ 
+ While in Manual Mode, the veiw from the camera is shown. The gun is aimed using the mouse cursor, and holding
+ down the left mouse button fires the gun. Clicking the settings button will bring up the camera settings. Along
+ the bottom, the horizontal and vertical limits are shown. These must be set specifically to each individual
+ sentry gun, and if your camera is not in a fixed position relative to the gun, they must be reset each time it
+ is moved. To set the limits, or 'calibrate' the gun, four keys are used: 'w', 's', 'z', and 'a'. These keys will
+ set the upper, right, bottom, and left limits, respectively. Press the key when the cursor is in a position that
+ aims the gun at a point that IS ON THE PROPER BORDER OF THE CAMERA'S VEIW. No particular order is required when
+ calibrating  in this way. If you want a permanent calibration, all you need to do is note the four values at the
+ bottom of the window, and set the xMin, xMax, yMin, and yMax variables to these values.
+ 
+ While in Autonomous Mode, the sentry gun will aim and fire at its own discretion. This is rumored to be quite
+ intimidating, but only if you are on the wrong end of the sentry gun. There are two methods of finding targets. One
+ is by frame differencing, the other by background subtraction. If you want to know the details, look on processing.org.
+ It should suffice to say that Background Subtraction will detect stationary targets as well as moving targets, while
+ frame differencing detects only moving targets. However, in the kind of environment where you would typically want a
+ sentry gun, there are often changing conditions, such as leaves blowing around, shadows gradually shifitng, and even
+ decoys thrown out before an attack to distract the sentry gun. These will generally mess up the background subtraction,
+ but they wil not affect frame differencing as much. However, choose for yourself which to use, based on the application.
+ The Tolerance Up and Down buttons raise and lower the tolerance of the subtraction both in Background Subtraction and 
+ Frame Differencing, which determines how sensitive it is to color change. Another option for adjusting sensitivity
+ is by using the minBlobArea variable, which defines the minimum number of pixels a target has to have for the
+ gun to fire on it. The settings still opens a camera settings window.
+ 
+ While Autonomous Mode is operating using background subtraction, the Background button sets the current camera image to
+ be the stored background. While in Frame Differencing, it does not have any affect on the result. The Frame Differencing
+ speed up and down buttons don't do anything as of the current version. In the future, they will adjust how sensistive 
+ the frame differencing is to motion, by defining how many frames back it uses to find motion.
+ 
+ 
+ 
+ FUTURE IMPROMVEMENTS / TO DO LIST:
+ 
+ -Frame Differencing speed adjustment
+ -Stereo cameras for finding range
+ -Gun-mounted camera for precision aiming in manual mode
+ -Predator laugh in Auto mode
+ -Automatic screenshots taken when firing in auto mode, for having a laugh or two after the game
+ -Laser sight
+ -Better calibration process
+ -Remote control via internet site
+ -Face/object recognition
+ -Voice password recognition
+ -"disable plate" that will disable the sentry gun for a random period of time when it is tapped or shot
+ -battery power
+ -anything else you can imagine; add to the list please
+
+
+ Produced by Bob Rudolph. Version 4 , Revision 9. Use this code and modify it freely.
+ Comments, bugs, questions? post a comment on code.google.com/p/airsoft-sentry-gun/wiki/General
+ 
+ */
+
+
+import JMyron.*;
+import blobDetection.*;
+import processing.serial.*;
+Serial arduinoPort;
+JMyron theMov;
+PFont font;
+BlobDetection target;
+Blob blob;
+Blob biggestBlob;
+int[] screenPixels;
+int[] currFrame;
+int[] Background;
+int tolerance = 60;
+boolean revealing;
+boolean manualControl = true;
+float difference;
+int blobWidth;
+int blobHeight;
+int biggestBlobArea;
+int minBlobArea = 100;
+boolean targetShape = true;
+boolean frameDifferencing = true;
+int frameDiffSpeed = 3;
+int targetX;
+int targetY;
+
+int Targetx = 75;
+int Targety = 80;
+int fire = 0;
+float xMin = 0.0;                     //    0.0   used for calibration. For a permanent calibration (lasts after stopping
+float xMax = 180.0;                   //    180.0    the program) change these 4 floats to your calibrations.
+float yMin = 180.0;                   //    180.0
+float yMax = 80.0;                    //    93.0
+String strTargetx;                    // used for serial sending
+String strTargety;                    //
+String strFire;                       //
+float windowWidth = 320.0;
+float windowHeight = 240.0;
+float xRatio;
+float yRatio;
+
+void setup() {
+  size(320, 340);
+  theMov = new JMyron();
+  theMov.start(320, 240);
+  theMov.findGlobs(0);
+  theMov.update();
+  Background = theMov.image();
+  target = new BlobDetection(320, 240);
+  target.setThreshold(0.5);
+  target.setPosDiscrimination(true);
+  drawButtons();
+  arduinoPort = new Serial(this, Serial.list()[2], 9600);      // start arduino communications
+  xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+  yRatio = (windowHeight/ (yMax - yMin));
+  initializeManualControl();
+}
+
+void draw() {
+  if(manualControl) {
+    manualControl();
+  }
+  else{
+    processTargets();
+  }  
+  strTargetx = "000" + str(Targetx);                   // make into 3-digit numbers
+  strTargetx = strTargetx.substring(strTargetx.length()-3);
+  strTargety = "000" + str(Targety);
+  strTargety = strTargety.substring(strTargety.length()-3);
+  println(strTargetx + "X      " + strTargety + "Y      " + str(fire) + 'F');
+  arduinoPort.write(strTargetx + 'X' + strTargety + 'Y' + str(fire) + 'F');   // send to arduino in form: ###X###Y#F
+}
+
+
+
+
+void initializeManualControl() {
+  strokeWeight(1);
+  stroke(150,150,150,200);
+  fill(150,150,150,200);
+  rect(0,240,320,110);
+  font = createFont("Century Gothic", 32);
+  textFont(font, 15);
+  fire = 0;
+}
+
+void manualControl() {
+  theMov.update();                              // draw new frame to screen
+  int[] img = theMov.image();
+  loadPixels();
+  for(int i=0;i<320*240;i++){
+    pixels[i] = img[i];
+  }
+  updatePixels();
+
+  if(mouseX<319 && mouseX>0 && mouseY<240 && mouseY > 0) {
+    stroke(255,0,0);                     //draw crosshairs
+    noFill();
+    line(mouseX, 0, mouseX, 240);
+    line(0, mouseY, 320, mouseY);
+    ellipse(mouseX, mouseY, 20, 20);
+    ellipse(mouseX, mouseY, 28, 22);
+    ellipse(mouseX, mouseY, 36, 24);
+    Targetx = int((mouseX/xRatio)+xMin);                 // calculate position to go to based on mouse position
+    Targety = int(((240-mouseY)/yRatio)+yMin);
+  }
+  strokeWeight(1);
+  stroke(150,150,150);
+  fill(150,150,150);
+  rect(0,240,320,110);
+  stroke(0,0,255);
+  fill(0,255,255);
+  rect(110,250,100,20);
+  rect(215,250,100,20);
+  fill(0,0,0);
+  text("Settings",135,265);
+  text("MAN/AUTO", 225,265);
+  fill(250,0,0);
+  text("MODE: Manual Control", 55,290);
+  textSize(15);
+  fill(0,0,150);
+  text("Press 'w','s','z', and 'a' to calibrate", 20, 307);
+  fill(0,150,0);
+  text("xMax:", 5, 329);
+  text("xMin:", 85, 329);
+  text("yMax:", 165, 329);
+  text("yMin:", 245, 329);
+  fill(255,255,255);
+  text(int(xMax), 50,329);
+  text(int(xMin), 130,329);
+  text(int(yMax), 210,329);
+  text(int(yMin), 290,329);
+
+  if(fire == 1) {
+    strokeWeight(3);    
+  }
+  else{
+    strokeWeight(1);
+  }
+}
+
+void drawButtons() {
+  font = createFont("Century Gothic", 32);
+  textFont(font, 15);
+  strokeWeight(1);
+  stroke(150,150,150);
+  fill(150,150,150);
+  rect(0,240,320,110);
+  stroke(0,0,255);
+  fill(0,255,255);
+  rect(5,250,100,20);
+  rect(110,250,100,20);
+  rect(215,250,100,20);
+  rect(110,280,40,20);
+  rect(155,280,60,20);
+  rect(225,280,90,20);
+  rect(5,310,75,20);
+  rect(208,310,24,20);
+  rect(235,310,47,20);
+
+  fill(200,200,200);
+  rect(75,280,32,20);
+  rect(175,310,30,20);
+  fill(0,0,0);
+  text(tolerance, 78,295);
+  text("Frame Diff", 7, 325);
+  text("Speed", 125, 325);
+  text("Up", 210,325);
+  text("Down", 237,325);
+  text("Background",10,265);
+  text("Settings",135,265);
+  text("MAN/AUTO", 225,265);
+  text("Tolerance", 4,295);
+  text("Up", 120,295);
+  text("Down", 160, 295);
+  text("Shape", 250, 295);
+
+  stroke(0,0,255);
+  strokeWeight(1);
+  fill(200,200,200);
+  rect(85,310,30,20);
+  fill(0,0,0);
+  if(frameDifferencing) {
+    text("ON", 89,325);
+  }
+  else{
+    text("OFF", 87,325);
+  }
+  strokeWeight(1);
+  stroke(0,0,255);
+  fill(200,200,200);
+  rect(175,310,30,20);
+  fill(0,0,0);
+  text(frameDiffSpeed, 177,325);
+
+}
+
+void initializeProcessTargets() {
+  drawButtons();
+  // initialize the pixel arrays to avoid a NullPointerException
+  theMov.update();
+  currFrame = theMov.image();
+  screenPixels = theMov.image();
+  //  Background = theMov.image();
+
+  revealing = true;
+}
+
+
+
+// function for processing targets
+//  
+void processTargets() {
+  theMov.update();
+  currFrame = theMov.image();
+  loadPixels();
+  for(int i = 0; i < 320*240; i++) {
+    pixels[i] = currFrame[i];
+  }
+  updatePixels();
+  for (int i=0; i < 320*240; i++) {
+    if(pixelsDifference(i) > tolerance) {
+      screenPixels[i] = color(255,255,255);
+      pixels[i] = color(0,255,255);
+    }
+    else{
+      screenPixels[i] = color(0,0,0);
+    }
+  }
+
+  if(frameDifferencing) {
+    Background = currFrame;
+  }
+  updatePixels();
+  biggestBlobArea = 0;
+  target.computeBlobs(screenPixels);
+  for(int i = 0; i < target.getBlobNb()-1; i++) {
+    blob = target.getBlob(i);
+    blobWidth = int(blob.w*320);
+    blobHeight = int(blob.h*240);
+    if(blobWidth*blobHeight >= biggestBlobArea) {
+      biggestBlob = target.getBlob(i);
+      biggestBlobArea = int(biggestBlob.w*320)*int(biggestBlob.h*240);
+    }
+  }
+  if(biggestBlobArea >= minBlobArea) {
+    fire = 1;
+    stroke(255,50,50);
+    strokeWeight(3);
+    fill(255,50,50,150);
+    if(targetShape) {
+      rect(int(biggestBlob.xMin*320.0), int(biggestBlob.yMin*240.0), int((biggestBlob.xMax-biggestBlob.xMin)*320.0), int((biggestBlob.yMax-biggestBlob.yMin)*240.0));
+    }
+    else{
+      ellipse(int(biggestBlob.x*320.0), int(biggestBlob.y*240.0), int(biggestBlob.w*320.0), int(biggestBlob.h*240.0));
+    }
+    targetX = int(biggestBlob.x*320.0);
+    targetY = int(biggestBlob.y*240.0);  
+    Targetx = int((targetX/xRatio)+xMin);                 // calculate position to go to based on mouse position
+    Targety = int(((240-targetY)/yRatio)+yMin);
+  }
+  else{
+    fire = 0;
+  }
+}
+
+// function for differencing pixels
+int pixelsDifference(int index) {
+  return int(Math.abs(red(currFrame[index])-red(Background[index]))) + int(Math.abs(green(currFrame[index])-green(Background[index]))) + int(Math.abs(blue(currFrame[index])-blue(Background[index])));
+}
+
+void mouseClicked() {
+  // background button
+  if(mouseX>=5 && mouseX<=105 && mouseY>=250 && mouseY<=270 && manualControl==false)
+    Background = currFrame;
+
+  // settings button
+  if(mouseX>=110 && mouseX<=210 && mouseY>=250 && mouseY<=270)
+    theMov.settings();
+
+  // manual / autonomous control mode button
+  if(mouseX>=215 && mouseX<=315 && mouseY>=250 && mouseY<=270) {
+    manualControl = !manualControl;
+    if(manualControl) {
+      initializeManualControl();
+    }
+    else{
+      initializeProcessTargets();
+    }
+  } 
+
+  // tolerance up button
+  if(mouseX>=110 && mouseX<=150 && mouseY>=280 && mouseY<=300 && manualControl==false){
+    tolerance+=1;
+    strokeWeight(1);
+    stroke(0,0,255);
+    fill(200,200,200);
+    rect(75,280,32,20);
+    fill(0,0,0);
+    text(tolerance, 78,295);
+  }
+
+  // tolerance down button
+  if(mouseX>=155 && mouseX<=215 && mouseY>=280 && mouseY<=300 && manualControl==false){
+    tolerance-=1;
+    strokeWeight(1);
+    stroke(0,0,255);
+    fill(200,200,200);
+    rect(75,280,32,20);
+    fill(0,0,0);
+    text(tolerance, 78,295);
+  }
+
+  // shape button
+  if(mouseX>=225 && mouseX<=315 && mouseY>=280 && mouseY<=300 && manualControl==false)
+    targetShape = !targetShape;
+
+  // frame differencing button
+  if(mouseX>=5 && mouseX<=105 && mouseY>=310 && mouseY<=330 && manualControl==false){
+    frameDifferencing = !frameDifferencing;
+    stroke(0,0,255);
+    strokeWeight(1);
+    fill(200,200,200);
+    rect(85,310,30,20);
+    fill(0,0,0);
+    if(frameDifferencing) {
+      text("ON", 89,325);
+
+    }
+    else{
+      text("OFF", 87,325);
+    }
+  }
+
+  // frameDifferencing speed up button
+  if(mouseX>=208 && mouseX<=232 && mouseY>=310 && mouseY<=330 && manualControl==false){
+    frameDiffSpeed+=1;
+    strokeWeight(1);
+    stroke(0,0,255);
+    fill(200,200,200);
+    rect(175,310,30,20);
+    fill(0,0,0);
+    text(frameDiffSpeed, 177,325);
+  }
+
+  // frameDifferencing speed down button
+  if(mouseX>=235 && mouseX<=282 && mouseY>=310 && mouseY<=330 && manualControl==false){
+    frameDiffSpeed-=1;
+    strokeWeight(1);
+    stroke(0,0,255);
+    fill(200,200,200);
+    rect(175,310,30,20);
+    fill(0,0,0);
+    text(frameDiffSpeed, 177,325);
+  }
+}
+
+void mousePressed() {
+  // firing when in manual control
+  if(mouseX>0 && mouseX<=319 && mouseY>=0 && mouseY<=240 && manualControl)
+    fire = 1;
+}
+
+void keyReleased() {
+  if (key == 'w' && manualControl){
+    yMax = float(Targety);
+    xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+    yRatio = (windowHeight/ (yMax - yMin));
+  }
+  if (key == 's' && manualControl) {
+    xMax = float(Targetx);
+    xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+    yRatio = (windowHeight/ (yMax - yMin));
+  }
+  if (key == 'z' && manualControl){
+    yMin = float(Targety);
+    xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+    yRatio = (windowHeight/ (yMax - yMin));
+  }
+  if (key == 'a' && manualControl){
+    xMin = float(Targetx);
+    xRatio = (windowWidth / (xMax - xMin));                        // used to allign sights with crosshairs on PC
+    yRatio = (windowHeight/ (yMax - yMin));
+  }
+}
+void mouseReleased() {
+  if(manualControl)
+    fire = 0;
+}
+
+public void stop() {
+  theMov.stop();
+  super.stop();
+}
+
+
+
+
+
+

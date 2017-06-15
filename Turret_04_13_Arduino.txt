@@ -1,0 +1,79 @@
+/*
+------------ SENTRY GUN TURRET VERSION 4 CODE 13 -------------
+ --------------------- by  Tobias Scharfenberg ---------------
+ ==============================================================
+ 
+ This is the lastest code as of Sept 8, 2010.
+ This is the arduino side of the code, and is compatible with version 4.13 of the computer code.
+ 
+ ATTACHMENT INSTRUCTIONS:
+ attach x-axis standard servo to digital I/O pin 3
+ attach y-axis standard servo to digital I/O pin 6
+ attach firing transistor / relay to digital I/O pin 5 (or servo that pulls trigger... see directions regarding this below)
+ 
+ Produced by Bob Rudolph. Version 4 , Revision 13. Use this code and modify it freely.
+ Comments, bugs, questions? post a comment on code.google.com/p/airsoft-sentry-gun/wiki/General
+
+ */
+
+#include <Servo.h>
+
+Servo pan;                            // x axis servo
+Servo tilt;                           // y axis servo
+Servo trigger;                        // trigger servo
+int xPosition;                        // pan position
+int yPosition;                        // tilt position
+int fire = 0;                         // if 1, fire; else, don't fire
+boolean idle = true;
+byte indicator;                       // if 'a', continue, if 'z', idle
+byte x100byte;
+byte x010byte;
+byte x001byte;
+byte y100byte;
+byte y010byte;
+byte y001byte;
+byte fireByte;
+
+void setup(){
+  pan.attach(3);
+  tilt.attach(6);
+  trigger.attach(4);
+  Serial.begin(9600);
+}
+
+void loop() {   
+  if (Serial.available() >= 8) {
+    indicator = Serial.read();
+    if(indicator == 'a') {
+      idle = false;
+      x100byte = Serial.read();
+      x010byte = Serial.read();
+      x001byte = Serial.read();
+      y100byte = Serial.read();
+      y010byte = Serial.read();
+      y001byte = Serial.read();
+      fireByte = Serial.read();
+    }
+    else if(indicator == 'z'){
+      idle = true;
+    }
+  }
+  if(idle) {
+    xPosition = 90;
+    yPosition = 140;
+    fire = 0;
+  }
+  else{
+    xPosition = (100*(int(x100byte)-48)) + (10*(int(x010byte)-48)) + (int(x001byte)-48);
+    yPosition = (100*(int(y100byte)-48)) + (10*(int(y010byte)-48)) + (int(y001byte)-48);
+    fire = int(fireByte) - 48;
+  }
+  pan.write(xPosition);
+  tilt.write(yPosition);
+  if(fire == 1) {
+    trigger.write(100);
+  }
+  else{
+    trigger.write(90);
+  }
+}

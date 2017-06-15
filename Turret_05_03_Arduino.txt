@@ -1,0 +1,152 @@
+/*
+------------ SENTRY GUN TURRET VERSION 5 CODE 3 -------------
+ ---------------------  Tobias Scharfenberg -----------------
+ ==============================================================
+ 
+ This is the lastest code as of Dec 29, 2010.
+ This is the arduino side of the code, and is compatible with version 5_03 of the computer code.
+ 
+ ATTACHMENT INSTRUCTIONS:
+ attach firing indicator LED to digital I/O pin 2
+ attach x-axis standard servo to digital I/O pin 3
+ attach y-axis standard servo to digital I/O pin 4
+ attach USB indicator LED to digital I/O pin 5
+ attach trigger standard servo to digital I/O pin 6
+ attach reloading switch to digital I/O pin 7
+ 
+ 
+ Produced by Bob Rudolph. Version 5 , Revision 3. Use this code and modify it freely.
+ Comments, bugs, questions? post a comment on code.google.com/p/airsoft-sentry-gun/wiki/General
+ 
+ */
+
+#include <Servo.h>
+
+Servo pan;                            // x axis servo
+Servo tilt;                           // y axis servo
+Servo trigger;                        // trigger servo
+
+int xPosition;                        // pan position
+int yPosition;                        // tilt position
+int fire = 0;                         // if 1, fire; else, don't fire
+
+int triggerTravelMillis = 1100;
+int fireTimer = 0;
+int fireSelector = 1;                 //   1 - semi-automatic firing, auto/semi-auto gun
+                                      //   3 - full automatic firing, full-auto gun
+
+int idleCounter = 0;
+boolean idle = true;
+
+byte indicator;                       // if 'a', continue, if 'z', idle
+byte x100byte;
+byte x010byte;
+byte x001byte;
+byte y100byte;
+byte y010byte;
+byte y001byte;
+byte fireByte;
+byte fireSelectorByte;
+
+void setup(){
+  pan.attach(3);
+  tilt.attach(4);
+  trigger.attach(6);
+  pinMode(5, OUTPUT);
+  pinMode(7, INPUT);
+  pinMode(2, OUTPUT);
+  Serial.begin(9600);
+}
+
+void loop() {   
+  if (Serial.available() >= 9) {
+    indicator = Serial.read();
+    if(indicator == 'a') {
+      idle = false;
+      idleCounter = 0;
+      analogWrite(5, 50);
+      x100byte = Serial.read();
+      x010byte = Serial.read();
+      x001byte = Serial.read();
+      y100byte = Serial.read();
+      y010byte = Serial.read();
+      y001byte = Serial.read();
+      fireByte = Serial.read();
+      fireSelectorByte = Serial.read();
+      fireSelector = int(fireSelectorByte) - 48;
+    }
+    else if(indicator == 'z'){
+      idle = true;
+    }
+  }
+  if(idle) {
+    idleCounter++;
+    if(idleCounter > 10000) {
+      analogWrite(5, 50);
+      delay(250);
+      digitalWrite(5, LOW);
+      idleCounter = 0;
+    }
+    else{
+      digitalWrite(5, LOW);
+    }
+    xPosition = 110;
+    yPosition = 100;
+    fire = 0;
+  }
+  else{
+    xPosition = (100*(int(x100byte)-48)) + (10*(int(x010byte)-48)) + (int(x001byte)-48);
+    yPosition = (100*(int(y100byte)-48)) + (10*(int(y010byte)-48)) + (int(y001byte)-48);
+    fire = int(fireByte) - 48;
+  }
+  if(digitalRead(7) == HIGH) {
+    xPosition = 110;
+    yPosition = 135;
+    fire = 0;
+  }  
+
+  pan.write(xPosition);
+  tilt.write(yPosition);
+  if(fire == 1) {
+    Fire(fireSelector);
+  }
+  else{
+    ceaseFire(fireSelector);
+  }
+}
+
+void Fire(int selector) {
+  if(selector == 1) {
+    fireTimer++;
+    if(fireTimer >=0 && fireTimer <= triggerTravelMillis) {
+      trigger.write(90);
+      digitalWrite(2, HIGH);
+    }
+    if(fireTimer > triggerTravelMillis && fireTimer < 1.5*triggerTravelMillis) {
+      trigger.write(140);
+      digitalWrite(2, LOW);
+    }
+    if(fireTimer >= 1.5*triggerTravelMillis) {
+      fireTimer = 0;
+    }
+  }
+  if(selector == 3) {
+    trigger.write(90);
+    digitalWrite(2, HIGH);
+  }  
+}
+void ceaseFire(int selector) {
+  if(selector == 1) {
+    fireTimer = 0;
+    trigger.write(140);
+    digitalWrite(2, LOW);
+  }
+  if(selector == 3) {
+    trigger.write(140);
+    digitalWrite(2, LOW);
+  } 
+  
+  
+}
+
+
